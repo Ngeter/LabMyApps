@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dandy's AI Lab - Dashboard</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- React & Babel for Browser Rendering -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700&display=swap');
+        body { font-family: 'Plus Jakarta Sans', sans-serif; }
+        .glass { background: rgba(15, 23, 42, 0.8); backdrop-filter: blur(12px); }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen">
+    <div id="root"></div>
+
+    <!-- Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, onSnapshot, deleteDoc, doc, query } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Firebase Config from Environment
+        const firebaseConfig = JSON.parse(__firebase_config);
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'dandy-ai-lab';
+
+        window.firebaseTools = { auth, db, appId, collection, addDoc, onSnapshot, deleteDoc, doc, query, signInAnonymously, onAuthStateChanged, signInWithCustomToken };
+    </script>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        function App() {
+            const [user, setUser] = useState(null);
+            const [apps, setApps] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [isModalOpen, setIsModalOpen] = useState(false);
+            const [searchTerm, setSearchTerm] = useState('');
+            
+            // Form State
+            const [newAppName, setNewAppName] = useState('');
+            const [newAppUrl, setNewAppUrl] = useState('');
+            const [newAppDesc, setNewAppDesc] = useState('');
+
+            useEffect(() => {
+                const { auth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } = window.firebaseTools;
+                
+                const initAuth = async () => {
+                    try {
+                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                            await signInWithCustomToken(auth, __initial_auth_token);
+                        } else {
+                            await signInAnonymously(auth);
+                        }
+                    } catch (e) { console.error(e); }
+                };
+
+                initAuth();
+                return onAuthStateChanged(auth, setUser);
+            }, []);
+
+            useEffect(() => {
+                if (!user) return;
+                const { db, appId, collection, query, onSnapshot } = window.firebaseTools;
+                
+                const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'apps'));
+                const unsubscribe = onSnapshot(q, (snapshot) => {
+                    setApps(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+                    setLoading(false);
+                }, (err) => {
+                    console.error(err);
+                    setLoading(false);
+                });
+
+                return () => unsubscribe();
+            }, [user]);
+
+            const handleAddApp = async (e) => {
+                e.preventDefault();
+                const { db, appId, collection, addDoc } = window.firebaseTools;
+                try {
+                    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'apps'), {
+                        name: newAppName,
+                        url: newAppUrl.startsWith('http') ? newAppUrl : `https://${newAppUrl}`,
+                        description: newAppDesc || 'Aplikasi buatan AI',
+                        createdAt: new Date().toISOString()
+                    });
+                    setNewAppName(''); setNewAppUrl(''); setNewAppDesc(''); setIsModalOpen(false);
+                } catch (e) { console.error(e); }
+            };
+
+            const handleDelete = async (id) => {
+                if (!confirm("Hapus project ini, Le?")) return;
+                const { db, appId, doc, deleteDoc } = window.firebaseTools;
+                await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'apps', id));
+            };
+
+            const filteredApps = apps.filter(a => a.name.toLowerCase().includes(searchTerm.toLowerCase()));
+
+            return (
+                <div className="p-6 md:p-12 max-w-6xl mx-auto">
+                    <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-12">
+                        <div>
+                            <div className="flex items-center gap-3 mb-2">
+                                <div className="p-2 bg-blue-600 rounded-lg shadow-lg shadow-blue-500/20">
+                                    <i data-lucide="cpu" className="text-white w-6 h-6"></i>
+                                </div>
+                                <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-emerald-400">
+                                    Dandy's AI Lab
+                                </h1>
+                            </div>
+                            <p className="text-slate-400">Arsip kodingan AI biar nggak berantakan. Rapi itu gaya, Le! 😎</p>
+                        </div>
+                        <button onClick={() => setIsModalOpen(true)} className="bg-blue-600 hover:bg-blue-500 px-6 py-3 rounded-xl font-bold flex items-center gap-2 transition-all active:scale-95 shadow-lg shadow-blue-900/20">
+                            <i data-lucide="plus-circle" className="w-5 h-5"></i> Tambah Project
+                        </button>
+                    </header>
+
+                    <div className="relative mb-8">
+                        <i data-lucide="search" className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 w-5 h-5"></i>
+                        <input 
+                            type="text" 
+                            placeholder="Cari project..." 
+                            className="w-full bg-slate-900/50 border border-slate-800 rounded-2xl py-4 pl-12 pr-4 focus:ring-2 focus:ring-blue-500/50 outline-none transition-all"
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                        />
+                    </div>
+
+                    {loading ? (
+                        <div className="text-center py-20 animate-pulse text-slate-500 text-lg">Lagi narik data dari awan...</div>
+                    ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                            {filteredApps.map(app => (
+                                <div key={app.id} className="group glass border border-slate-800 p-6 rounded-3xl hover:border-blue-500/50 transition-all duration-300">
+                                    <div className="flex justify-between mb-4">
+                                        <div className="p-3 bg-slate-800 rounded-2xl text-blue-400 group-hover:bg-blue-600 group-hover:text-white transition-all">
+                                            <i data-lucide="box" className="w-6 h-6"></i>
+                                        </div>
+                                        <button onClick={() => handleDelete(app.id)} className="text-slate-600 hover:text-red-400 p-2"><i data-lucide="trash-2" className="w-5 h-5"></i></button>
+                                    </div>
+                                    <h3 className="text-xl font-bold mb-2">{app.name}</h3>
+                                    <p className="text-slate-400 text-sm mb-6 line-clamp-2">{app.description}</p>
+                                    <a href={app.url} target="_blank" className="flex items-center justify-center gap-2 w-full py-3 bg-slate-800 hover:bg-blue-600 rounded-xl font-semibold transition-all">
+                                        Buka Apps <i data-lucide="external-link" className="w-4 h-4"></i>
+                                    </a>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    {isModalOpen && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+                            <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-3xl p-8 shadow-2xl scale-in">
+                                <div className="flex justify-between items-center mb-6">
+                                    <h2 className="text-2xl font-bold">Simpan Apps Baru</h2>
+                                    <button onClick={() => setIsModalOpen(false)} className="text-slate-500 hover:text-white"><i data-lucide="x" className="w-6 h-6"></i></button>
+                                </div>
+                                <form onSubmit={handleAddApp} className="space-y-4">
+                                    <input required placeholder="Nama Apps" className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500/50" value={newAppName} onChange={e => setNewAppName(e.target.value)} />
+                                    <input required placeholder="URL (Contoh: dandy.github.io/app-1)" className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500/50" value={newAppUrl} onChange={e => setNewAppUrl(e.target.value)} />
+                                    <textarea placeholder="Deskripsi Singkat" className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 h-24 outline-none focus:ring-2 focus:ring-blue-500/50" value={newAppDesc} onChange={e => setNewAppDesc(e.target.value)} />
+                                    <button type="submit" className="w-full bg-blue-600 hover:bg-blue-500 py-4 rounded-xl font-bold shadow-lg shadow-blue-900/20">Simpan Sekarang!</button>
+                                </form>
+                            </div>
+                        </div>
+                    )}
+
+                    <footer className="mt-20 py-8 border-t border-slate-900 text-center text-slate-600 text-sm">
+                        <p>Dandy's IT Lab &copy; 2024. No Code? No Problem! 🤖</p>
+                    </footer>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+
+        // Refresh icons after render
+        setTimeout(() => lucide.createIcons(), 500);
+    </script>
+</body>
+</html>
